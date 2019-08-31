@@ -81,8 +81,6 @@ def log(msg):
 jupyter_kernel_dir = '/.jupyter_kernel_dir'
 jupyter_kernel_temp = '/.jupyter_kernel_temp'
 
-register_signal_handler()
-
 master_addr, master_port = get_ip_address(), sys.argv[-3]
 worker_addr, worker_port = sys.argv[-2].split(":")
 tcp, master_comm_port = create_server()
@@ -108,12 +106,17 @@ if not os.path.exists(kernel_info["kernel_temp_folder"]):
 log_path = os.path.join(kernel_info["kernel_temp_folder"], 'master.log')
 log_f = open(log_path, 'w')
 
+register_signal_handler()
+log("Registered signals")
+
 try:
     cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "TCPKeepAlive=yes",
            worker_addr, "-p", worker_port,
            "python %s/kernel_gateway_worker.py %s %d" % (jupyter_kernel_dir, master_addr, master_comm_port)]
 
     kernel_proc = subprocess.Popen(cmd, shell = False, preexec_fn = os.setpgrp)
+
+    log("Lauched remote worker")
 except Exception as e:
     print(e)
     kernel_proc.kill()

@@ -8,10 +8,26 @@ import time
 
 conn = None
 
-def send_json(tp, data):
+def send_json(conn, tp, data):
     msg = {"type":tp, "value":data}
     if conn != None:
         conn.send(json.dumps(msg).encode("ascii"))
+
+def receive_json(conn, tp = None):
+    if conn != None:
+        msg = conn.recv(2 ** 12)
+        msg = msg.decode("ascii")
+        if len(msg) == 0:
+            raise RuntimeError
+        msg = json.loads(msg)
+        if tp == None or msg["type"] == tp:
+            value = msg["value"]
+            log("Matched message received %s" % (str(msg["type"])))
+            return value
+        else:
+            log("Mismatched message received %s" % (str(msg["type"])))
+            return None
+    return None
 
 def register_signal_handler():
     def get_signal_pair():
@@ -25,7 +41,7 @@ def register_signal_handler():
 
     def signal_handler(signum, frame):
         print("Forwarding received signal: %d" %(signum))
-        send_json("signal", get_signal_name(signum))
+        send_json(conn, "signal", get_signal_name(signum))
 
     for signame, signum in get_signal_pair():
         try:
@@ -45,6 +61,22 @@ def get_ip_address():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.connect(("8.8.8.8", 80))
     return s.getsockname()[0]
+
+def port_forward(ssh_server_addr, ssh_server_port, port_pairs):
+    procs = []
+    for master_port, worker_port in port_pairs:
+        cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "TCPKeepAlive=yes",
+               "-N", "-L", "%d:127.0.0.1:%d" % (master_port, worker_port), ssh_server_addr, "-p", ssh_server_port]
+        p = subprocess.Popen(cmd, shell = False, preexec_fn = os.setpgrp)
+        tunnel = "127:0.0.1:%s --- %s:%s" % (worker_port, ssh_server_addr, master_port)
+        log("Tunneled " + tunnel)
+        procs.append((p, tunnel))
+    return procs
+
+def log(msg):
+    if log_f != None:
+        log_f.write(msg + "\n")
+        log_f.flush()
 
 jupyter_kernel_dir = '/.jupyter_kernel_dir'
 jupyter_kernel_temp = '/.jupyter_kernel_temp'
@@ -71,6 +103,11 @@ kernel_info = {"conn_file": conn_file_json,
                "master_addr": master_addr,
                "master_port": master_port}
 
+if not os.path.exists(kernel_info["kernel_temp_folder"]):
+    os.makedirs(kernel_info["kernel_temp_folder"])
+log_path = os.path.join(kernel_info["kernel_temp_folder"], 'master.log')
+log_f = open(log_path, 'w')
+
 try:
     cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "TCPKeepAlive=yes",
            worker_addr, "-p", worker_port,
@@ -84,6 +121,28 @@ except Exception as e:
 
 conn, addr = tcp.accept()
 
-send_json("kernel_info", kernel_info)
+free_ports = receive_json(conn, tp = "free_ports")
 
-kernel_proc.wait()
+kernel_info["port_map"] = {}
+for name, port in free_ports:
+    kernel_info["port_map"][name] = (kernel_info["conn_file"][name], port)
+    kernel_info["conn_file"][name] = port
+
+try:
+    procs = []
+    procs = port_forward(kernel_info["worker_addr"], kernel_info["worker_port"], list(kernel_info["port_map"].values()))
+except Exception as e:
+    print(e)
+    raise e
+
+send_json(conn, "kernel_info", kernel_info)
+
+try:
+    kernel_proc.wait()
+finally:
+    for (p, tunnel) in procs:
+        try:
+            p.kill()
+            log("Closed " + tunnel)
+        except:
+            log("Closing " + tunnel + " failed")

@@ -9,9 +9,14 @@ import time
 sock = None
 log_f = None
 
-def receive_json(tp = None):
-    if sock != None:
-        msg = sock.recv(2 ** 12)
+def send_json(conn, tp, data):
+    msg = {"type":tp, "value":data}
+    if conn != None:
+        conn.send(json.dumps(msg).encode("ascii"))
+
+def receive_json(conn, tp = None):
+    if conn != None:
+        msg = conn.recv(2 ** 12)
         msg = msg.decode("ascii")
         if len(msg) == 0:
             raise RuntimeError
@@ -47,17 +52,6 @@ def get_free_tcp_port(num_port):
         tcp.close()
     return ports
 
-def port_forward(ssh_server_addr, ssh_server_port, port_pairs):
-    procs = []
-    for master_port, worker_port in port_pairs:
-        cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "TCPKeepAlive=yes",
-               "-N", "-L", "%d:127.0.0.1:%d" % (worker_port, master_port), ssh_server_addr, "-p", ssh_server_port]
-        p = subprocess.Popen(cmd, shell = False, preexec_fn = os.setpgrp)
-        tunnel = "127:0.0.1:%s --- %s:%s" % (worker_port, ssh_server_addr, master_port)
-        log("Tunneled " + tunnel)
-        procs.append((p, tunnel))
-    return procs
-
 def log(msg):
     if log_f != None:
         log_f.write(msg + "\n")
@@ -70,11 +64,16 @@ master_comm_addr, master_comm_port = sys.argv[-2], int(sys.argv[-1])
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.connect((master_comm_addr, master_comm_port))
 
-kernel_info = receive_json(tp = "kernel_info")
+port_names = ["shell_port", "iopub_port", "stdin_port", "control_port", "hb_port"]
+free_ports = get_free_tcp_port(len(port_names))
+free_ports = [(port_names[i], free_ports[i]) for i in range(len(port_names))]
+send_json(sock, "free_ports", free_ports)
+
+kernel_info = receive_json(sock, tp = "kernel_info")
 
 if not os.path.exists(kernel_info["kernel_temp_folder"]):
     os.makedirs(kernel_info["kernel_temp_folder"])
-log_path = os.path.join(kernel_info["kernel_temp_folder"], 'kernel.log')
+log_path = os.path.join(kernel_info["kernel_temp_folder"], 'worker.log')
 log_f = open(log_path, 'w')
 
 ###################### lauch kernel process ######################
@@ -106,30 +105,9 @@ except Exception as e:
     print(e)
     raise e
 
-###################### opening ssh tunnels ######################
-
-port_names = ["shell_port", "iopub_port", "stdin_port", "control_port", "hb_port"]
-free_ports = get_free_tcp_port(len(port_names))
-
-kernel_info["port_map"] = {}
-for name_idx in range(len(port_names)):
-    kernel_info["port_map"][port_names[name_idx]] = (kernel_info["conn_file"][port_names[name_idx]], free_ports[name_idx])
-    kernel_info["conn_file"][port_names[name_idx]] = free_ports[name_idx]
-
-try:
-    procs = []
-    procs = port_forward(kernel_info["master_addr"], kernel_info["master_port"], list(kernel_info["port_map"].values()))
-except Exception as e:
-    print(e)
-    raise e
-
-log("Opened ssh tunnels")
-
-##################################################################
-
 try:
     while True:
-        signal_msg = receive_json(tp = "signal")
+        signal_msg = receive_json(sock, tp = "signal")
         assert signal_msg != None
         signum = get_signal_num(signal_msg)
         assert signum != None
@@ -143,13 +121,6 @@ finally:
         log("Sending signal %s to %d" % ("SIGQUIT", kernel_proc.pid))
     except Exception as e:
         print(e)
-
-    for (p, tunnel) in procs:
-        try:
-            p.kill()
-            log("Closed " + tunnel)
-        except:
-            log("Closing " + tunnel + " failed")
 
 
 

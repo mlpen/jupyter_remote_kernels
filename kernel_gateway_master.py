@@ -40,8 +40,11 @@ def register_signal_handler():
         return None
 
     def signal_handler(signum, frame):
-        print("Forwarding received signal: %d" %(signum))
-        send_json(conn, "signal", get_signal_name(signum))
+        if signum == signal.SIGINT:
+            log("Forwarding received signal: %s" %(get_signal_name(signum)))
+            send_json(conn, "signal", get_signal_name(signum))
+        else:
+            log("Catched signal: %s" %(get_signal_name(signum)))
 
     for signame, signum in get_signal_pair():
         try:
@@ -63,14 +66,18 @@ def get_ip_address():
     return s.getsockname()[0]
 
 def port_forward(ssh_server_addr, ssh_server_port, port_pairs):
+    def signal_handling():
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+    devnull = open(os.devnull, 'w')
     procs = []
     for master_port, worker_port in port_pairs:
         cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "TCPKeepAlive=yes",
                "-N", "-L", "%d:127.0.0.1:%d" % (master_port, worker_port), ssh_server_addr, "-p", ssh_server_port]
-        p = subprocess.Popen(cmd, shell = False, preexec_fn = os.setpgrp)
+        local_pf = subprocess.Popen(cmd, stdout = devnull, stderr = devnull, shell = False, preexec_fn = signal_handling)
         tunnel = "127:0.0.1:%s --- %s:%s" % (worker_port, ssh_server_addr, master_port)
         log("Tunneled " + tunnel)
-        procs.append((p, tunnel))
+        procs.append((local_pf, tunnel))
     return procs
 
 def log(msg):
@@ -103,6 +110,7 @@ kernel_info = {"conn_file": conn_file_json,
 
 if not os.path.exists(kernel_info["kernel_temp_folder"]):
     os.makedirs(kernel_info["kernel_temp_folder"])
+import random
 log_path = os.path.join(kernel_info["kernel_temp_folder"], 'master.log')
 log_f = open(log_path, 'w')
 
@@ -140,12 +148,13 @@ except Exception as e:
 
 send_json(conn, "kernel_info", kernel_info)
 
+log("Entering wait status")
 try:
     kernel_proc.wait()
 finally:
-    for (p, tunnel) in procs:
+    for (local_pf, tunnel) in procs:
         try:
-            p.kill()
-            log("Closed " + tunnel)
+            local_pf.kill()
         except:
-            log("Closing " + tunnel + " failed")
+            pass
+        log("Closed " + tunnel)

@@ -91,14 +91,11 @@ os.chdir(kernel_info["current_working_dir"])
 log("Changed current working directory %s" % (kernel_info["current_working_dir"]))
 
 try:
+    devnull = open(os.devnull, 'w')
+    
     cmd = ['python', '-m', 'ipykernel_launcher', '-f', connection_file_path]
 
-    kernel_proc = subprocess.Popen(cmd,
-                                   stdout = subprocess.PIPE,
-                                   stderr = subprocess.PIPE,
-                                   stdin = subprocess.PIPE,
-                                   shell = False,
-                                   preexec_fn = os.setpgrp)
+    kernel_proc = subprocess.Popen(cmd, stdout = devnull, stderr = devnull)
 
     log("Lauched kernel process, process pid: %d" % (kernel_proc.pid))
 except Exception as e:
@@ -118,7 +115,7 @@ except Exception as e:
 finally:
     try:
         os.kill(kernel_proc.pid, signal.SIGQUIT)
-        log("Sending signal %s to %d" % ("SIGQUIT", kernel_proc.pid))
+        log("Kernel Terminated, sending signal %s to %d" % ("SIGQUIT", kernel_proc.pid))
     except Exception as e:
         print(e)
 

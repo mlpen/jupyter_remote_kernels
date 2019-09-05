@@ -106,7 +106,8 @@ kernel_info = {"conn_file": conn_file_json,
                "worker_addr": worker_addr,
                "worker_port": worker_port,
                "master_addr": master_addr,
-               "master_port": master_port}
+               "master_port": master_port, 
+               "cmd": "python -m ipykernel_launcher -f {worker_connection_file}"}
 
 if not os.path.exists(kernel_info["kernel_temp_folder"]):
     os.makedirs(kernel_info["kernel_temp_folder"])

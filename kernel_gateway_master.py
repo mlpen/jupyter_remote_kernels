@@ -88,6 +88,11 @@ def log(msg):
 jupyter_kernel_dir = '/.jupyter_kernel_dir'
 jupyter_kernel_temp = '/.jupyter_kernel_temp'
 
+cmd = "python -m ipykernel_launcher -f {worker_connection_file}"
+for argv in sys.argv:
+    if argv.startswith("--cmd "):
+        cmd = argv[6:]
+
 master_addr, master_port = get_ip_address(), sys.argv[-3]
 worker_addr, worker_port = sys.argv[-2].split(":")
 tcp, master_comm_port = create_server()
@@ -107,7 +112,7 @@ kernel_info = {"conn_file": conn_file_json,
                "worker_port": worker_port,
                "master_addr": master_addr,
                "master_port": master_port, 
-               "cmd": "python -m ipykernel_launcher -f {worker_connection_file}"}
+               "cmd": cmd}
 
 if not os.path.exists(kernel_info["kernel_temp_folder"]):
     os.makedirs(kernel_info["kernel_temp_folder"])

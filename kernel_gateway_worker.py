@@ -93,7 +93,11 @@ log("Changed current working directory %s" % (kernel_info["current_working_dir"]
 try:
     devnull = open(os.devnull, 'w')
     
-    cmd = ['python', '-m', 'ipykernel_launcher', '-f', connection_file_path]
+    cmd = kernel_info["cmd"].split[" "]
+    
+    for arg_idx in range(len(cmd)):
+        if cmd[arg_idx] == "{worker_connection_file}":
+            cmd[arg_idx] = connection_file_path
 
     kernel_proc = subprocess.Popen(cmd, stdout = devnull, stderr = devnull)
 

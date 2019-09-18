@@ -88,16 +88,27 @@ def log(msg):
 jupyter_kernel_dir = '/.jupyter_kernel_dir'
 jupyter_kernel_temp = '/.jupyter_kernel_temp'
 
-cmd = "python -m ipykernel_launcher -f {worker_connection_file}"
+cmd = None
+master_addr = None
+master_port = None
+worker_addr = None
+worker_port = None
+connection_file_path = None
+
 for argv in sys.argv:
     if argv.startswith("--cmd "):
-        cmd = argv[6:]
-
-master_addr, master_port = get_ip_address(), sys.argv[-3]
-worker_addr, worker_port = sys.argv[-2].split(":")
+        cmd = argv.replace("--cmd ", "")
+    elif argv.startswith("--master_port "):
+        master_addr, master_port = get_ip_address(), argv.replace("--master_port ", "")
+    elif argv.startswith("--worker "):
+        worker_addr, worker_port = argv.replace("--worker ", "").split(":")
+    elif argv.startswith("--kernel_file "):
+        connection_file_path = argv.replace("--kernel_file ", "")
+        
+if None in [cmd, master_addr, master_port, worker_addr, worker_port, connection_file_path]:
+    raise Exception("Input components missing")
+        
 tcp, master_comm_port = create_server()
-
-connection_file_path = sys.argv[-1]
 connection_file_name = connection_file_path.split('/')[-1]
 kernel_info = connection_file_name.replace('.json', '')
 current_working_dir = os.getcwd()

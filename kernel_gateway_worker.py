@@ -93,7 +93,7 @@ log("Changed current working directory %s" % (kernel_info["current_working_dir"]
 try:
     devnull = open(os.devnull, 'w')
     
-    cmd = kernel_info["cmd"].split[" "]
+    cmd = kernel_info["cmd"].split(" ")
     
     for arg_idx in range(len(cmd)):
         if cmd[arg_idx] == "{worker_connection_file}":
